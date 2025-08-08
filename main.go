@@ -29,15 +29,15 @@ type results struct {
 }
 
 type AnnealingConfig struct {
-	InitialTemp      float64
-	MinTemp          float64
-	CoolingRate      float64
-	ReheatFactor     float64
-	FitnessThreshold float64
-	MinImprovement   float64
-	MaxIterations    int
-	WindowSize       int
-	Change           int
+	InitialTemp      float64 `json:"initialTemp"`
+	MinTemp          float64 `json:"minTemp"`
+	CoolingRate      float64 `json:"coolingRate"`
+	ReheatFactor     float64 `json:"reheatFactor"`
+	FitnessThreshold float64 `json:"fitnessThreshold"`
+	MinImprovement   float64 `json:"minImprovement"`
+	MaxIterations    int     `json:"maxIterations"`
+	WindowSize       int     `json:"windowSize"`
+	Change           int     `json:"change"`
 }
 
 //Fields and Tags:
@@ -48,7 +48,7 @@ type AnnealingConfig struct {
 //are used to map the JSON keys "constraints", "microdata",
 //and "output" to the corresponding nested structs.
 
-type Config struct {
+type PopulationConfig struct {
 	Constraints struct {
 		File string `json:"file"`
 	} `json:"constraints"`
@@ -58,9 +58,9 @@ type Config struct {
 	Output struct {
 		File string `json:"file"`
 	} `json:"output"`
-	Scatter struct {
+	Validate struct {
 		File string `json:"file"`
-	} `json:"scatter"`
+	} `json:"validate"`
 }
 
 func main() {
@@ -80,7 +80,7 @@ func main() {
 	defer file.Close()
 
 	// Decode the JSON data into the Config struct
-	var config Config
+	var config PopulationConfig
 	err = json.NewDecoder(file).Decode(&config)
 	if err != nil {
 		fmt.Printf("Error decoding JSON: %v\n", err)
@@ -91,7 +91,7 @@ func main() {
 	constraintsFile := config.Constraints.File
 	microdataFile := config.Microdata.File
 	outputFile1 := config.Output.File
-	outputFile2 := config.Scatter.File
+	outputFile2 := config.Validate.File
 	// Get the file name from the command-line arguments
 
 	constraints, constarintHeader, err := ReadConstraintCSV(constraintsFile)
@@ -107,18 +107,18 @@ func main() {
 		fmt.Printf("Error: %v\n", err)
 	}
 	if reflect.DeepEqual(constarintHeader, microDataHEader) {
-		annealingConfig := AnnealingConfig{
-			InitialTemp:      5000.0,
-			MinTemp:          0.00001,
-			CoolingRate:      0.999,
-			ReheatFactor:     0.8,
-			FitnessThreshold: 0.001,
-			MinImprovement:   0.0001,
-			MaxIterations:    5000000,
-			WindowSize:       1000,
-			Change:           100000,
+		configFile, err := os.Open("annealing_config.json")
+		if err != nil {
+			fmt.Printf("Error opening annealing config: %v\n", err)
+			return
 		}
+		defer configFile.Close()
 
+		var annealingConfig AnnealingConfig
+		if err := json.NewDecoder(configFile).Decode(&annealingConfig); err != nil {
+			fmt.Printf("Error decoding annealing config: %v\n", err)
+			return
+		}
 		start := time.Now()
 		parallelRun(constraints, microData, outputFile1, outputFile2, annealingConfig)
 
