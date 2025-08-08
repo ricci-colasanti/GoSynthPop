@@ -1,0 +1,50 @@
+# Binaries and build artifacts
+/bin/
+/dist/
+*.exe
+*.out
+
+# IDE and editor files
+.idea/
+.vscode/
+*.swp
+*.swo
+
+# Go workspace files
+go.work
+go.work.sum
+
+# Dependency directories
+vendor/
+
+# Environment files
+.env
+.env.local
+
+# Virtual environments
+venv/
+.venv/
+env/
+
+# Data files (CSV, JSON, etc.)
+/data/
+*.csv
+*.json
+*.xlsx
+*.feather
+*.parquet
+
+# Results and outputs
+/results/
+/output/
+*.out
+*.log
+
+# Test artifacts
+__pycache__/
+*.prof
+*.test
+
+# OS generated files
+.DS_Store
+Thumbs.db
