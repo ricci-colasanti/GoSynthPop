@@ -1,5 +1,5 @@
 
-# GoSynthPop (or your chosen name)  
+# GoSynthPop 
 **🚧 Work in Progress - Not Ready for Production Use 🚧**  
 
 *This is a research/experimental project for generating UK spatial synthetic populations.  
