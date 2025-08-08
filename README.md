@@ -1,6 +1,16 @@
+
+# GoSynthPop (or your chosen name)  
+**🚧 Work in Progress - Not Ready for Production Use 🚧**  
+
+*This is a research/experimental project for generating UK spatial synthetic populations.  
+The code is under active development and not yet intended for public release or real-world use.*  
+
+---
+
 # UK Spatial Synthetic Population Generator
 
-A Go-based tool for generating synthetic populations by combining UK census data with Understanding Society survey data using simulated annealing optimization.
+A Go-based tool for generating synthetic populations by combining UK census data with Understanding Society survey data using simulated annealing optimization.  
+
 
 ## Overview
 
