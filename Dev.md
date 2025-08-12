@@ -149,3 +149,5 @@ func main() {
 }
 
 ```
+
+2) Output the synthpop survay for each area
