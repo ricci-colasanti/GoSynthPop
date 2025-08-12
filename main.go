@@ -40,14 +40,6 @@ type AnnealingConfig struct {
 	Change           int     `json:"change"`
 }
 
-//Fields and Tags:
-//
-//Each nested struct has a single field named File, which is a string.
-//The json:"file" tag is used to map the JSON key "file" to the File field in the struct.
-//The outer tags (json:"constraints", json:"microdata", json:"output")
-//are used to map the JSON keys "constraints", "microdata",
-//and "output" to the corresponding nested structs.
-
 type PopulationConfig struct {
 	Constraints struct {
 		File string `json:"file"`
@@ -63,68 +55,103 @@ type PopulationConfig struct {
 	} `json:"validate"`
 }
 
-func main() {
-	configFileName := "config.json"
-	if len(os.Args) != 2 {
-		fmt.Println("Usage: ./program <config.json>")
-	} else {
-		configFileName = os.Args[1]
-	}
-
-	// Open and read the JSON file
+// loadConfig loads the population configuration from a JSON file.
+func loadConfig(configFileName string) (PopulationConfig, error) {
+	var config PopulationConfig
 	file, err := os.Open(configFileName)
 	if err != nil {
-		fmt.Printf("Error opening file: %v\n", err)
-		return
+		return config, fmt.Errorf("error opening config file: %w", err)
 	}
 	defer file.Close()
 
-	// Decode the JSON data into the Config struct
-	var config PopulationConfig
-	err = json.NewDecoder(file).Decode(&config)
+	if err := json.NewDecoder(file).Decode(&config); err != nil {
+		return config, fmt.Errorf("error decoding config JSON: %w", err)
+	}
+	return config, nil
+}
+
+// loadAnnealingConfig loads annealing parameters from a JSON file.
+func loadAnnealingConfig(annealingFileName string) (AnnealingConfig, error) {
+	var annealingConfig AnnealingConfig
+	file, err := os.Open(annealingFileName)
 	if err != nil {
-		fmt.Printf("Error decoding JSON: %v\n", err)
-		return
+		return annealingConfig, fmt.Errorf("error opening annealing config: %w", err)
+	}
+	defer file.Close()
+
+	if err := json.NewDecoder(file).Decode(&annealingConfig); err != nil {
+		return annealingConfig, fmt.Errorf("error decoding annealing config: %w", err)
+	}
+	return annealingConfig, nil
+}
+
+// readArgs parses command-line arguments with default fallbacks.
+func readArgs() (string, string) {
+	configFileName := "config.json"
+	annealingFileName := "annealing_config.json"
+
+	if len(os.Args) > 1 {
+		configFileName = os.Args[1]
+	}
+	if len(os.Args) > 2 {
+		annealingFileName = os.Args[2]
 	}
 
-	// Access the file names
-	constraintsFile := config.Constraints.File
-	microdataFile := config.Microdata.File
-	outputFile1 := config.Output.File
-	outputFile2 := config.Validate.File
-	// Get the file name from the command-line arguments
+	return configFileName, annealingFileName
+}
 
-	constraints, constarintHeader, err := ReadConstraintCSV(constraintsFile)
-	if err == nil {
-		fmt.Printf("Areas: %v\n", len(constraints))
-	} else {
-		fmt.Printf("Error %v\n", err)
+// loadConstraints loads constraint data from CSV and validates headers.
+func loadConstraints(constraintsFile string) ([]ConstraintData, []string, error) {
+	constraints, header, err := ReadConstraintCSV(constraintsFile)
+	if err != nil {
+		return nil, nil, fmt.Errorf("failed to read constraints CSV: %w", err)
 	}
-	microData, microDataHEader, err := ReadMicroDataCSV(microdataFile)
-	if err == nil {
-		fmt.Printf("Sample population: %v \n", len(microData))
-	} else {
-		fmt.Printf("Error: %v\n", err)
-	}
-	if reflect.DeepEqual(constarintHeader, microDataHEader) {
-		configFile, err := os.Open("annealing_config.json")
-		if err != nil {
-			fmt.Printf("Error opening annealing config: %v\n", err)
-			return
-		}
-		defer configFile.Close()
+	fmt.Printf("Loaded %d constraint areas", len(constraints))
+	return constraints, header, nil
+}
 
-		var annealingConfig AnnealingConfig
-		if err := json.NewDecoder(configFile).Decode(&annealingConfig); err != nil {
-			fmt.Printf("Error decoding annealing config: %v\n", err)
-			return
-		}
+// loadMicrodata loads microdata from CSV and validates headers.
+func loadMicrodata(microdataFile string) ([]MicroData, []string, error) {
+	microData, header, err := ReadMicroDataCSV(microdataFile)
+	if err != nil {
+		return nil, nil, fmt.Errorf("failed to read microdata CSV: %w", err)
+	}
+	fmt.Printf("Loaded %d microdata records", len(microData))
+	return microData, header, nil
+}
+
+func main() {
+	configFileName, anellingFileName := readArgs()
+
+	config, err := loadConfig(configFileName)
+	if err != nil {
+		fmt.Printf("Config error: %v", err)
+	}
+
+	annealingConfig, err := loadAnnealingConfig(anellingFileName)
+	if err != nil {
+		fmt.Printf("Annealing config error: %v", err)
+	}
+
+	// Load data
+	constraints, constraintHeader, err := loadConstraints(config.Constraints.File)
+	if err != nil {
+		fmt.Printf("Constraint loading error: %v", err)
+	}
+
+	microData, microDataHeader, err := loadMicrodata(config.Microdata.File)
+	if err != nil {
+		fmt.Printf("Microdata loading error: %v", err)
+	}
+
+	if reflect.DeepEqual(constraintHeader, microDataHeader) {
 		start := time.Now()
-		parallelRun(constraints, microData, outputFile1, outputFile2, annealingConfig)
+		parallelRun(constraints, microData, config.Output.File, config.Validate.File, annealingConfig)
 
 		elapsed := time.Since(start) // Calculate duration
 		fmt.Printf("slowFunction took %s\n", elapsed)
 	} else {
 		fmt.Printf("Error: The Constraints header and the MiroData header not the same\n")
+		os.Exit(1)
 	}
 }
