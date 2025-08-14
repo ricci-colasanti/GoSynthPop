@@ -3,13 +3,36 @@ package main
 import (
 	"encoding/csv"
 	"fmt"
+	"math/rand"
 	"os"
 	"runtime"
 	"strconv"
+	"strings"
 	"sync"
 	"sync/atomic"
 	"time"
 )
+
+func initializeRNG(config AnnealingConfig, numWorkers int) []*rand.Rand {
+	workerRNGs := make([]*rand.Rand, numWorkers)
+
+	var masterRNG *rand.Rand
+	useSeed := strings.ToLower(strings.TrimSpace(config.UseRandomSeed)) == "yes"
+	if useSeed {
+		// Deterministic mode
+		masterRNG = rand.New(rand.NewSource(*config.RandomSeed))
+	} else {
+		// Production mode (non-deterministic)
+		masterRNG = rand.New(rand.NewSource(time.Now().UnixNano()))
+	}
+
+	// Seed worker RNGs from master
+	for i := range workerRNGs {
+		workerRNGs[i] = rand.New(rand.NewSource(masterRNG.Int63()))
+	}
+
+	return workerRNGs
+}
 
 // parallelRun executes population synthesis in parallel across multiple workers.
 // It takes constraint data, microdata, output file paths, and annealing configuration,
@@ -24,13 +47,16 @@ import (
 //
 // Returns:
 //   - error: Any error encountered during processing
-func parallelRun(constraints []ConstraintData, microData []MicroData, outputfile1 string, outputfile2 string, config AnnealingConfig) error {
+func parallelRun(constraints []ConstraintData, microData []MicroData, microdataHeader []string, outputfile1 string, outputfile2 string, config AnnealingConfig) error {
 	// Dynamic worker count - use either CPU count or constraint count, whichever is smaller
 	numWorkers := runtime.NumCPU()
 	if len(constraints) < numWorkers {
 		numWorkers = len(constraints)
 	}
 	fmt.Printf("🚀 Starting %d workers for %d population areas\n", numWorkers, len(constraints))
+
+	// Initialize RNGs based on config
+	workerRNGs := initializeRNG(config, numWorkers)
 
 	// Setup communication channels:
 	// - jobs: feeds constraints to workers
@@ -66,10 +92,14 @@ func parallelRun(constraints []ConstraintData, microData []MicroData, outputfile
 	if err := idsWriter.Write([]string{"area_id", "microdata_id"}); err != nil {
 		return fmt.Errorf("error writing IDs headers: %w", err)
 	}
-	if err := fractionsWriter.Write([]string{"area_id", "variable", "synthetic_fraction", "constraint_fraction"}); err != nil {
+	header := append([]string{"geography_code"}, microdataHeader...)
+	if err := fractionsWriter.Write(header); err != nil {
 		return fmt.Errorf("error writing fractions headers: %w", err)
 	}
-
+	fractionsWriter.Flush() // This will write the line to file immediately
+	if err := fractionsWriter.Error(); err != nil {
+		return fmt.Errorf("error flushing fractions headers: %w", err)
+	}
 	// Progress tracking setup
 	var (
 		processed      atomic.Int32 // Thread-safe counter for completed jobs
@@ -111,37 +141,36 @@ func parallelRun(constraints []ConstraintData, microData []MicroData, outputfile
 		for res := range resultsChan {
 			areaId := res.area
 
-			// Write ID mappings (area_id → synthetic population IDs)
+			// Write ID mappings (using existing CSV writer)
 			for _, id := range res.ids {
 				if err := idsWriter.Write([]string{areaId, id}); err != nil {
-					// Non-blocking error reporting
 					select {
 					case errChan <- fmt.Errorf("error writing ID row: %w", err):
-					default: // Skip if error channel is full
-					}
-					return
-				}
-			}
-
-			// Write fraction comparisons for each variable
-			for i := range res.synthpop_totals {
-				row := []string{
-					areaId,
-					fmt.Sprintf("var_%d", i), // Generic variable name
-					// Calculate fractions by dividing by total population
-					strconv.FormatFloat(res.synthpop_totals[i]/res.population, 'f', -1, 64),
-					strconv.FormatFloat(res.constraint_totals[i]/res.population, 'f', -1, 64),
-				}
-				if err := fractionsWriter.Write(row); err != nil {
-					select {
-					case errChan <- fmt.Errorf("error writing fraction row: %w", err):
 					default:
 					}
 					return
 				}
 			}
 
-			processed.Add(1) // Increment progress counter
+			// Build the unquoted CSV line
+			var buf strings.Builder
+			buf.WriteString(areaId)
+			for _, val := range res.synthpop_totals {
+				buf.WriteByte(',')
+				buf.WriteString(strconv.FormatFloat(val, 'f', -1, 64))
+			}
+			buf.WriteByte('\n')
+
+			// Write raw string directly to file
+			if _, err := fractionsFile.WriteString(buf.String()); err != nil {
+				select {
+				case errChan <- fmt.Errorf("error writing fraction row: %w", err):
+				default:
+				}
+				return
+			}
+
+			processed.Add(1)
 		}
 	}()
 
@@ -151,9 +180,10 @@ func parallelRun(constraints []ConstraintData, microData []MicroData, outputfile
 		workerWg.Add(1)
 		go func(workerID int) {
 			defer workerWg.Done()
+			rng := workerRNGs[workerID]
 			for constraint := range jobs {
 				// Generate synthetic population for this constraint area
-				res := syntheticPopulation(constraint, microData, config)
+				res := syntheticPopulation(constraint, microData, config, rng)
 
 				// Send result or abort if error occurred
 				select {

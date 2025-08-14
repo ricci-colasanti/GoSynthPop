@@ -38,7 +38,12 @@ type AnnealingConfig struct {
 	MaxIterations    int     `json:"maxIterations"`
 	WindowSize       int     `json:"windowSize"`
 	Change           int     `json:"change"`
+	Distance         string  `json:"distance"`
+	UseRandomSeed    string  `json:"useRandomSeed"`
+	RandomSeed       *int64  `json:"randomSeed,omitempty"` // Optional seed for reproducibility
 }
+
+var ValidMetrics = []string{"CHI_SQUARED", "EUCLIDEAN", "NORM_EUCLIDEAN", "MANHATTEN", "KL_DIVERGENCE", "COSINE", "JSDIVERGENCE"}
 
 type PopulationConfig struct {
 	Constraints struct {
@@ -72,17 +77,36 @@ func loadConfig(configFileName string) (PopulationConfig, error) {
 
 // loadAnnealingConfig loads annealing parameters from a JSON file.
 func loadAnnealingConfig(annealingFileName string) (AnnealingConfig, error) {
-	var annealingConfig AnnealingConfig
+	var config AnnealingConfig
+
 	file, err := os.Open(annealingFileName)
 	if err != nil {
-		return annealingConfig, fmt.Errorf("error opening annealing config: %w", err)
+		return config, fmt.Errorf("error opening config: %w", err)
 	}
 	defer file.Close()
 
-	if err := json.NewDecoder(file).Decode(&annealingConfig); err != nil {
-		return annealingConfig, fmt.Errorf("error decoding annealing config: %w", err)
+	if err := json.NewDecoder(file).Decode(&config); err != nil {
+		return config, fmt.Errorf("invalid config format: %w", err)
 	}
-	return annealingConfig, nil
+
+	// Validate distance metric
+	valid := false
+	for _, m := range ValidMetrics {
+		if config.Distance == m {
+			valid = true
+			break
+		}
+	}
+
+	if !valid {
+		return config, fmt.Errorf(
+			"invalid distance metric '%s'. Must be one of: %v",
+			config.Distance,
+			ValidMetrics,
+		)
+	}
+
+	return config, nil
 }
 
 // readArgs parses command-line arguments with default fallbacks.
@@ -146,7 +170,7 @@ func main() {
 
 	if reflect.DeepEqual(constraintHeader, microDataHeader) {
 		start := time.Now()
-		parallelRun(constraints, microData, config.Output.File, config.Validate.File, annealingConfig)
+		parallelRun(constraints, microData, microDataHeader, config.Output.File, config.Validate.File, annealingConfig)
 
 		elapsed := time.Since(start) // Calculate duration
 		fmt.Printf("slowFunction took %s\n", elapsed)

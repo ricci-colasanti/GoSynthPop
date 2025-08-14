@@ -3,7 +3,6 @@ package main
 import (
 	"math"
 	"math/rand"
-	"time"
 )
 
 // Constants defining distance metrics and numerical stability parameters
@@ -19,28 +18,61 @@ const (
 	MANHATTEN             // Manhattan distance
 )
 
-// Distance calculates the distance between two distributions using the specified metric
-//
-// Parameters:
-//   - metric: The distance metric to use (KL_DIVERGENCE, CHI_SQUARED, etc.)
-//   - constraints: The target distribution values
-//   - testData: The generated distribution values to compare
-//
-// Returns:
-//   - The calculated distance between the distributions
-func Distance(metric int, constraints, testData []float64) float64 {
-	switch metric {
-	case CHI_SQUARED:
-		return ChiSquaredDistance(constraints, testData)
-	case EUCLIDEAN:
-		return EuclideanDistance(constraints, testData)
-	case NORM_EUCLIDEAN:
-		return NormalizedEuclideanDistance(constraints, testData)
-	case MANHATTEN:
-		return ManhattanDistance(constraints, testData)
-	default: // KL_DIVERGENCE
-		return KLDivergence(constraints, testData)
+type DistanceFunc func([]float64, []float64) float64
+
+func distanceFunc(config AnnealingConfig) DistanceFunc {
+
+	// distanceFunc returns the appropriate distance calculation function based on the configured metric.
+	// It serves as a factory function for distance metrics used in simulated annealing.
+	//
+	// Parameters:
+	//   - config: AnnealingConfig containing the distance metric specification
+	//
+	// Returns:
+	//   - DistanceFunc: The selected distance calculation function
+	//
+	// Supported metrics:
+	//   - "CHI_SQUARED": Chi-squared distance
+	//   - "EUCLIDEAN": Standard Euclidean distance
+	//   - "NORM_EUCLIDEAN": Normalized Euclidean distance
+	//   - "MANHATTAN": Manhattan distance (L1 norm)
+	//   - Default: KL Divergence
+	switch config.Distance {
+	case "CHI_SQUARED":
+		return ChiSquaredDistance
+	case "EUCLIDEAN":
+		return EuclideanDistance
+	case "NORM_EUCLIDEAN":
+		return NormalizedEuclideanDistance
+	case "MANHATTEN":
+		return ManhattanDistance
+	case "COSINE":
+		return Cosine
+	case "JSDIVERGENCE":
+		return JSdivergence
+	default:
+		return KLDivergence
 	}
+}
+
+func Cosine(constraints, testData []float64) float64 {
+	dot, normConstraints, normTestData := 0.0, 0.0, 0.0
+	for i := range constraints {
+		dot += constraints[i] * testData[i]
+		normConstraints += constraints[i] * constraints[i]
+		normTestData += testData[i] * testData[i]
+	}
+	return 1 - (dot / (math.Sqrt(normConstraints) * math.Sqrt(normTestData)))
+}
+
+func JSdivergence(constraints, testData []float64) float64 {
+	// Compute the midpoint distribution
+	m := make([]float64, len(constraints))
+	for i := range constraints {
+		m[i] = (constraints[i] + testData[i]) / 2
+	}
+	// Symmetrized KL divergence
+	return 0.5 * (KLDivergence(constraints, m) + KLDivergence(testData, m))
 }
 
 // KLDivergence calculates the Kullback-Leibler divergence between two distributions
@@ -158,19 +190,6 @@ func replaceValue(old []float64, new []float64) {
 	}
 }
 
-// removeUnordered removes an element from a slice in O(1) time (does not preserve order)
-//
-// Parameters:
-//   - slice: The slice to modify
-//   - index: The index of the element to remove
-//
-// Returns:
-//   - The modified slice
-func removeUnordered(slice []int, index int) []int {
-	slice[index] = slice[len(slice)-1]
-	return slice[:len(slice)-1]
-}
-
 // isValidMicrodata checks if microdata values satisfy all constraints
 //
 // Parameters:
@@ -203,7 +222,7 @@ func isValidMicrodata(mdValues, constraints []float64) bool {
 //   - newFitness: The fitness after replacement
 //   - flag: True if replacement was accepted, false if reverted
 func replace(microdata []MicroData, constraint ConstraintData, synthPopTotals []float64,
-	synthPopMicrodataIndexess []int, fitness float64, temp float64, rng *rand.Rand) (float64, bool) {
+	synthPopMicrodataIndexess []int, fitness float64, temp float64, rng *rand.Rand, distfunc DistanceFunc) (float64, bool) {
 
 	flag := true
 
@@ -236,7 +255,8 @@ func replace(microdata []MicroData, constraint ConstraintData, synthPopTotals []
 		synthPopTotals[i] = synthPopTotals[i] - oldValues[i] + newValues[i]
 	}
 
-	newFitness := Distance(EUCLIDEAN, constraint.Values, synthPopTotals)
+	newFitness := distfunc(constraint.Values, synthPopTotals)
+	//newFitness := Distance(config.Distance, constraint.Values, synthPopTotals)
 
 	// Metropolis acceptance criterion
 	if newFitness >= fitness || math.Exp((fitness-newFitness)/temp) < rng.Float64() {
@@ -302,12 +322,13 @@ func initPopulation(constraint ConstraintData, microdata []MicroData) ([]float64
 //
 // Returns:
 //   - results: The best solution found
-func syntheticPopulation(constraint ConstraintData, microdata []MicroData, config AnnealingConfig) results {
+func syntheticPopulation(constraint ConstraintData, microdata []MicroData, config AnnealingConfig, rng *rand.Rand) results {
 	var synthPopResults results
 
 	// Initialize population and fitness
 	synthPopTotals, synthPopIDs := initPopulation(constraint, microdata)
 	fitness := KLDivergence(constraint.Values, synthPopTotals)
+	distanceFunction := distanceFunc(config)
 
 	// Setup annealing parameters
 	changes := config.Change
@@ -324,12 +345,10 @@ func syntheticPopulation(constraint ConstraintData, microdata []MicroData, confi
 	bestSynthPopIDs := make([]int, len(synthPopIDs))
 	copy(bestSynthPopIDs, synthPopIDs)
 
-	rng := rand.New(rand.NewSource(time.Now().UnixNano()))
-
 	// Main optimization loop
 	for iteration := 0; iteration < config.MaxIterations && changes > 0 && temp > config.MinTemp; iteration++ {
 		flag := true
-		fitness, flag = replace(microdata, constraint, synthPopTotals, synthPopIDs, fitness, temp, rng)
+		fitness, flag = replace(microdata, constraint, synthPopTotals, synthPopIDs, fitness, temp, rng, distanceFunction)
 
 		// Update best solution
 		if fitness < bestFitness {

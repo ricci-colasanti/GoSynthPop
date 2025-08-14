@@ -150,4 +150,85 @@ func main() {
 
 ```
 
-2) Output the synthpop survay for each area
+2) Output the synthpop survay for each area  
+
+
+```go
+
+	header := append([]string{"area_id"}, microdataHeader...)
+	if err := fractionsWriter.Write(header); err != nil {
+		return fmt.Errorf("error writing fractions headers: %w", err)
+	}
+	fractionsWriter.Flush() // This will write the line to file immediately
+	if err := fractionsWriter.Error(); err != nil {
+		return fmt.Errorf("error flushing fractions headers: %w", err)
+	}
+
+
+
+
+var writerWg sync.WaitGroup
+writerWg.Add(1)
+go func() {
+    defer writerWg.Done()
+    for res := range resultsChan {
+        areaId := res.area
+
+        // Write ID mappings (using existing CSV writer)
+        for _, id := range res.ids {
+            if err := idsWriter.Write([]string{areaId, id}); err != nil {
+                select {
+                case errChan <- fmt.Errorf("error writing ID row: %w", err):
+                default:
+                }
+                return
+            }
+        }
+
+        // Build the unquoted CSV line
+        var buf strings.Builder
+        buf.WriteString(areaId)
+        for _, val := range res.synthpop_totals {
+            buf.WriteByte(',')
+            buf.WriteString(strconv.FormatFloat(val, 'f', -1, 64))
+        }
+        buf.WriteByte('\n')
+
+        // Write raw string directly to file
+        if _, err := fractionsFile.WriteString(buf.String()); err != nil {
+            select {
+            case errChan <- fmt.Errorf("error writing fraction row: %w", err):
+            default:
+            }
+            return
+        }
+
+        processed.Add(1)
+    }
+}()
+```
+
+### Key Improvements:
+
+1. **String Building Optimization**:
+   - Uses `strings.Builder` for efficient string concatenation
+   - Avoids intermediate string allocations
+
+2. **Direct File Writing**:
+   - Bypasses `csv.Writer` to prevent automatic quoting
+   - Writes the exact format you want: `S00135308,33,0,8,...`
+
+3. **Maintained Concurrency Safety**:
+   - Keeps all existing synchronization (`WaitGroup`, channels)
+   - Preserves non-blocking error reporting
+
+4. **Memory Efficiency**:
+   - Builder reuses buffer space
+   - Single write operation per record
+
+### Why This Works Better:
+
+- For your ID mappings (which need proper CSV handling), keeps using `csv.Writer`
+- For your synthetic totals (which need unquoted output), writes directly
+- Maintains all error handling and progress tracking
+- Still properly closes/flushes files via your existing `defer` statements
