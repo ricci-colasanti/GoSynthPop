@@ -1,0 +1,340 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Synthetic Population Generator Documentation</title>
+    <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/css/bootstrap.min.css" rel="stylesheet">
+    <style>
+        body {
+            padding: 20px;
+            line-height: 1.6;
+            max-width: 1200px;
+            margin: 0 auto;
+            font-family: Arial, sans-serif;
+        }
+        h1, h2, h3 {
+            margin-top: 30px;
+            margin-bottom: 15px;
+            color: #495057;
+        }
+        .section {
+            margin-bottom: 30px;
+            padding-bottom: 15px;
+            border-bottom: 1px solid #dee2e6;
+        }
+        .code-block {
+            background-color: #f8f9fa;
+            padding: 15px;
+            border-radius: 5px;
+            border-left: 4px solid #6f42c1;
+            overflow-x: auto;
+            margin: 15px 0;
+            font-family: monospace;
+            font-size: 14px;
+        }
+        .feature-list {
+            padding-left: 20px;
+        }
+        .note {
+            background-color: #e9ecef;
+            padding: 10px 15px;
+            border-radius: 5px;
+            margin: 15px 0;
+        }
+        footer {
+            margin-top: 40px;
+            padding-top: 20px;
+            border-top: 1px solid #dee2e6;
+            color: #6c757d;
+            font-size: 0.9em;
+        }
+    </style>
+</head>
+<body>
+    <div class="container-fluid">
+        <header class="mb-4">
+            <h1>Synthetic Population Generator: Comprehensive Explanation with Code</h1>
+        </header>
+
+        <div class="section">
+            <h2>1. Overview</h2>
+            <p>This parallelized system generates synthetic populations by distributing geographic area processing across CPU cores. It creates:</p>
+            <ol>
+                <li><strong>ID Mappings</strong>: Links geographic areas to synthetic individuals</li>
+                <li><strong>Fraction Comparisons</strong>: Shows statistical alignment between synthetic and constraint data</li>
+            </ol>
+            
+            <p>Key features:</p>
+            <ul class="feature-list">
+                <li><strong>Dynamic worker allocation</strong> (optimized for CPU cores)</li>
+                <li><strong>Real-time progress tracking</strong> (ETA, memory usage)</li>
+                <li><strong>Graceful error handling</strong> with clean shutdowns</li>
+                <li><strong>Efficient I/O</strong> with buffered CSV writing</li>
+            </ul>
+        </div>
+
+        <div class="section">
+            <h2>2. Initialization Phase</h2>
+            
+            <h3>Worker Pool Setup</h3>
+            <p>The system first determines how many parallel workers to use, balancing between available CPU cores and the number of geographic areas to process.</p>
+            
+            <div class="code-block">
+// Determine number of workers
+numWorkers := runtime.NumCPU()  // Default to CPU core count
+if len(constraints) < numWorkers {
+    numWorkers = len(constraints)  // Use fewer workers if fewer areas exist
+}
+fmt.Printf("Starting %d workers for %d population areas\n", numWorkers, len(constraints))
+            </div>
+            
+            <p><strong>Channels for Coordination:</strong></p>
+            <ul>
+                <li><code>jobs</code>: Feeds constraints to workers (buffered for efficiency)</li>
+                <li><code>resultsChan</code>: Collects processed results</li>
+                <li><code>errChan</code>: Reports errors without blocking</li>
+            </ul>
+            
+            <div class="code-block">
+// Create coordination channels
+jobs := make(chan ConstraintData, numWorkers*2)      // Buffered job queue
+resultsChan := make(chan results, numWorkers*2)     // Buffered results queue
+errChan := make(chan error, 1)                     // Non-blocking error reporting
+            </div>
+            
+            <h3>Output File Preparation</h3>
+            <p>Two CSV files are created:</p>
+            <ol>
+                <li><strong>ID Mappings</strong> (outputfile1): <code>area_id → synthetic_id</code></li>
+                <li><strong>Fraction Comparisons</strong> (outputfile2): Statistical validation</li>
+            </ol>
+            
+            <div class="code-block">
+// Create and configure output files
+idsFile, err := os.Create(outputfile1)  // ID mappings
+if err != nil {
+    return fmt.Errorf("cannot create IDs file: %w", err)
+}
+defer idsFile.Close()  // Ensures file closure even if errors occur
+
+fractionsFile, err := os.Create(outputfile2)  // Statistical comparisons
+if err != nil {
+    return fmt.Errorf("cannot create fractions file: %w", err)
+}
+defer fractionsFile.Close()
+
+// Initialize CSV writers with buffering
+idsWriter := csv.NewWriter(idsFile)
+defer idsWriter.Flush()  // Flush remaining data on exit
+
+fractionsWriter := csv.NewWriter(fractionsFile)
+defer fractionsWriter.Flush()
+
+// Write CSV headers
+if err := idsWriter.Write([]string{"area_id", "microdata_id"}); err != nil {
+    return fmt.Errorf("error writing IDs headers: %w", err)
+}
+if err := fractionsWriter.Write([]string{"area_id", "variable", "synthetic_fraction", "constraint_fraction"}); err != nil {
+    return fmt.Errorf("error writing fractions headers: %w", err)
+}
+            </div>
+        </div>
+
+        <div class="section">
+            <h2>3. Progress Monitoring System</h2>
+            <p>A dedicated goroutine provides real-time updates every 2 seconds, including:</p>
+            <ul>
+                <li>Completion percentage</li>
+                <li>Elapsed time and ETA</li>
+                <li>Memory usage</li>
+            </ul>
+            
+            <div class="code-block">
+var (
+    processed      atomic.Int32  // Thread-safe counter
+    totalJobs      = len(constraints)
+    startTime      = time.Now()
+    progressTicker = time.NewTicker(2 * time.Second)  // Update every 2s
+)
+defer progressTicker.Stop()  // Clean up ticker on exit
+
+// Progress reporter goroutine
+go func() {
+    for range progressTicker.C {
+        elapsed := time.Since(startTime).Round(time.Second)
+        done := processed.Load()
+        percent := float64(done)/float64(totalJobs)*100
+        
+        // Calculate ETA (if at least one job completed)
+        var eta time.Duration
+        if done > 0 {
+            perItemTime := elapsed / time.Duration(done)
+            eta = time.Duration(totalJobs-int(done)) * perItemTime
+        }
+
+        // Memory usage (MB)
+        var m runtime.MemStats
+        runtime.ReadMemStats(&m)
+        
+        fmt.Printf("Progress: %d/%d (%.1f%%) | Time: %v | ETA: %v | Memory: %vMB",
+            done, totalJobs, percent, elapsed, eta.Round(time.Second), m.Alloc/1024/1024)
+    }
+}()
+            </div>
+        </div>
+
+        <div class="section">
+            <h2>4. Parallel Processing Pipeline</h2>
+            
+            <h3>Writer Goroutine</h3>
+            <p>Handles all file I/O, writing two types of records:</p>
+            <ol>
+                <li><strong>ID Mappings</strong> (area → synthetic individuals)</li>
+                <li><strong>Fraction Comparisons</strong> (synthetic vs. constraint data)</li>
+            </ol>
+            
+            <div class="code-block">
+var writerWg sync.WaitGroup
+writerWg.Add(1)
+go func() {
+    defer writerWg.Done()
+    for res := range resultsChan {
+        // Write ID mappings (area → synthetic IDs)
+        for _, id := range res.ids {
+            if err := idsWriter.Write([]string{res.area, id}); err != nil {
+                select {
+                case errChan <- fmt.Errorf("ID write error: %w", err):  // Report error
+                default:  // Non-blocking if channel full
+                }
+                return
+            }
+        }
+        
+        // Write fraction comparisons (per variable)
+        for i := range res.synthpop_totals {
+            row := []string{
+                res.area,
+                fmt.Sprintf("var_%d", i),  // Variable label
+                strconv.FormatFloat(res.synthpop_totals[i]/res.population, 'f', -1, 64),  // Synth fraction
+                strconv.FormatFloat(res.constraint_totals[i]/res.population, 'f', -1, 64), // Constraint fraction
+            }
+            if err := fractionsWriter.Write(row); err != nil {
+                select {
+                case errChan <- fmt.Errorf("fraction write error: %w", err):
+                default:
+                }
+                return
+            }
+        }
+        processed.Add(1)  // Update progress counter
+    }
+}()
+            </div>
+            
+            <h3>Worker Pool</h3>
+            <p>Each worker:</p>
+            <ol>
+                <li>Processes constraints from the <code>jobs</code> channel</li>
+                <li>Generates synthetic populations using <code>syntheticPopulation()</code></li>
+                <li>Sends results to the writer via <code>resultsChan</code></li>
+            </ol>
+            
+            <div class="code-block">
+var workerWg sync.WaitGroup
+for i := 0; i < numWorkers; i++ {
+    workerWg.Add(1)
+    go func(workerID int) {
+        defer workerWg.Done()
+        for constraint := range jobs {
+            res := syntheticPopulation(constraint, microData, config)  // Core processing
+            select {
+            case resultsChan <- res:  // Send result
+            case <-errChan:  // Abort if error occurred
+                return
+            }
+        }
+    }(i)
+}
+            </div>
+            
+            <h3>Job Distribution & Error Handling</h3>
+            <p>The main loop feeds jobs to workers while monitoring for errors:</p>
+            
+            <div class="code-block">
+for _, constraint := range constraints {
+    select {
+    case jobs <- constraint:  // Send next job
+    case err := <-errChan:    // Handle errors from writers/workers
+        close(jobs)           // Stop workers
+        workerWg.Wait()       // Wait for current jobs to finish
+        close(resultsChan)    // Signal writer to exit
+        writerWg.Wait()       // Wait for final writes
+        return err            // Propagate error
+    }
+}
+close(jobs)  // Signal workers that no more jobs remain
+            </div>
+        </div>
+
+        <div class="section">
+            <h2>5. Completion Phase</h2>
+            <p>After all jobs finish:</p>
+            <ol>
+                <li>Workers complete</li>
+                <li>Results channel closes</li>
+                <li>Writer finishes processing</li>
+                <li>Final performance stats are logged</li>
+            </ol>
+            
+            <div class="code-block">
+workerWg.Wait()      // Wait for all workers
+close(resultsChan)   // Signal writer to exit
+writerWg.Wait()      // Ensure all data is written
+
+// Final report
+elapsed := time.Since(startTime).Round(time.Second)
+fmt.Printf("Completed %d populations in %v (avg %.2f/sec)\n",
+    totalJobs, elapsed, float64(totalJobs)/elapsed.Seconds())
+            </div>
+        </div>
+
+        <div class="section">
+            <h2>Key Takeaways</h2>
+            <ol>
+                <li><strong>Efficient Parallelism</strong>:
+                    <ul>
+                        <li>Dynamically scales workers to CPU cores</li>
+                        <li>Buffered channels prevent blocking</li>
+                    </ul>
+                </li>
+                <li><strong>Robust Error Handling</strong>:
+                    <ul>
+                        <li>Non-blocking error reporting</li>
+                        <li>Clean shutdowns on failure</li>
+                    </ul>
+                </li>
+                <li><strong>Real-Time Monitoring</strong>:
+                    <ul>
+                        <li>Progress %, ETA, memory usage</li>
+                    </ul>
+                </li>
+                <li><strong>Reliable Output</strong>:
+                    <ul>
+                        <li>Atomic counters for thread-safe progress</li>
+                        <li>Deferred flushes ensure data integrity</li>
+                    </ul>
+                </li>
+            </ol>
+            
+            <p class="note">This design ensures <strong>high throughput</strong> for large datasets while maintaining <strong>clear visibility</strong> into system performance.</p>
+        </div>
+
+        <footer>
+            <p>© 2023 Synthetic Population Generator Documentation</p>
+        </footer>
+    </div>
+
+    <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/js/bootstrap.bundle.min.js"></script>
+</body>
+</html>
