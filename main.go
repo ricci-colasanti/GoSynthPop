@@ -111,7 +111,7 @@ func loadAnnealingConfig(annealingFileName string) (AnnealingConfig, error) {
 
 // readArgs parses command-line arguments with default fallbacks.
 func readArgs() (string, string) {
-	configFileName := "config.json"
+	configFileName := "config_ukw.json"
 	annealingFileName := "annealing_config.json"
 
 	if len(os.Args) > 1 {
