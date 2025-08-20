@@ -9,7 +9,7 @@
             font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
             line-height: 1.6;
             color: #333;
-            max-width: 1000px;
+            max-width: 1200px;
             margin: 0 auto;
             padding: 20px;
             background-color: #f8f9fa;
@@ -37,25 +37,11 @@
             font-size: 0.9em;
         }
         
-        pre {
-            background-color: #f6f8fa;
+        .warning {
+            background-color: #fff3cd;
+            border-left: 4px solid #ffc107;
             padding: 1em;
-            border-radius: 5px;
-            overflow-x: auto;
-            border-left: 4px solid #3498db;
             margin: 1.5em 0;
-        }
-        
-        .highlight {
-            background-color: #ffffcc;
-            padding: 2px 4px;
-        }
-        
-        .note {
-            background-color: #e7f3fe;
-            border-left: 4px solid #2196F3;
-            padding: 1em;
-            margin: 1em 0;
         }
         
         .key-term {
@@ -63,75 +49,94 @@
             color: #2980b9;
         }
         
-        .algorithm-step {
-            margin-left: 1.5em;
-            margin-bottom: 0.5em;
+        .feature-list, .process-steps {
+            padding-left: 20px;
         }
         
-        .constraint {
-            color: #c7254e;
+        .section {
+            margin-bottom: 30px;
+            padding-bottom: 15px;
+        }
+        
+        footer {
+            margin-top: 40px;
+            padding-top: 20px;
+            border-top: 1px solid #dee2e6;
+            color: #6c757d;
+            font-size: 0.9em;
+            text-align: center;
+        }
+        
+        a {
+            color: #2980b9;
+            text-decoration: none;
+        }
+        
+        a:hover {
+            text-decoration: underline;
         }
     </style>
 </head>
 <body>
-
     <h1>GoSynthPop</h1>
-    <div class="note">
+    
+    <div class="warning">
         <strong>Work in Progress - Not Ready for Production Use</strong><br>
         This is a research/experimental project for generating UK spatial synthetic populations.<br>
         The code is under active development and not yet intended for public release or real-world use.
     </div>
-    
-    <h2>1. UK Spatial Synthetic Population Generator</h2>
-    <p>A Go-based tool for generating synthetic populations by combining UK census data with Understanding Society survey data using simulated annealing optimization.</p>
 
-    ---
+    <div class="section">
+        <h2>UK Spatial Synthetic Population Generator</h2>
+        <p>A Go-based tool for generating synthetic populations by combining UK census data with Understanding Society survey data using simulated annealing optimization.</p>
+    </div>
 
-    <h2>2. Overview and Conceptual Foundation</h2>
-    <p>This tool creates spatially detailed synthetic populations that match statistical constraints from census data while preserving individual characteristics from survey microdata. It's particularly designed for UK local authorities and uses parallel processing for efficient large-scale population synthesis.</p>
+    <div class="section">
+        <h2>Overview</h2>
+        <p>This tool creates spatially detailed synthetic populations that match statistical constraints from census data while preserving individual characteristics from survey microdata. It's particularly designed for UK local authorities and uses parallel processing for efficient large-scale population synthesis.</p>
+    </div>
 
-    ---
+    <div class="section">
+        <h2>Features</h2>
+        <ul class="feature-list">
+            <li><strong><a href="Docs/Parallel.html">Parallel processing</a></strong> - Utilizes all CPU cores for fast population generation</li>
+            <li><strong>Multiple distance metrics</strong> - KL Divergence, Chi-Squared, Euclidean, and more</li>
+            <li><strong><a href="Docs/SimulatedAnnealing.html">Simulated annealing</a></strong> - Intelligent optimization algorithm to match constraints</li>
+            <li><strong>Validation outputs</strong> - Generates comparison files to verify constraint matching</li>
+            <li><strong>UK-focused</strong> - Designed for UK census geography and Understanding Society data</li>
+        </ul>
+    </div>
 
-    <h2>3. Features</h2>
-    <ul>
-        <li><strong><a href="Docs/Parallel.html">Parallel processing</a></strong> - Utilizes all CPU cores for fast population generation</li>
-        <li><strong>Multiple distance metrics</strong> - KL Divergence, Chi-Squared, Euclidean, and more</li>
-        <li><strong><a href="Docs/SimulatedAnnealing.html">Simulated annealing</a></strong> - Intelligent optimization algorithm to match constraints</li>
-        <li><strong>Validation outputs</strong> - Generates comparison files to verify constraint matching</li>
-        <li><strong>UK-focused</strong> - Designed for UK census geography and Understanding Society data</li>
-    </ul>
-
-    ---
-
-    <h2>4. How It Works</h2>
-    
-    <h3>Inputs:</h3>
-    <ul>
-        <li>Constraint data (CSV) - Census totals for each area</li>
-        <li>Microdata (CSV) - Understanding Society individual records</li>
-        <li>Configuration (JSON) - Specifies files and annealing parameters</li>
-    </ul>
-    
-    <h3>Process:</h3>
-    <p>For each geographical area:</p>
-    <ol class="process-steps">
-        <li>Creates initial random population from microdata</li>
-        <li>Uses simulated annealing to optimize population to match constraints</li>
-        <li>Tracks fitness and automatically adjusts optimization parameters</li>
-    </ol>
-    
-    <h3>Outputs:</h3>
-    <ul>
-        <li>Population IDs mapping area to individuals</li>
-        <li>Fractional comparisons showing constraint matching</li>
-    </ul>
-
-    ---
+    <div class="section">
+        <h2>How It Works</h2>
+        
+        <h3>Inputs:</h3>
+        <ul>
+            <li>Constraint data (CSV) - Census totals for each area</li>
+            <li>Microdata (CSV) - Understanding Society individual records</li>
+            <li>Configuration (JSON) - Specifies files and annealing parameters</li>
+        </ul>
+        
+        <h3>Process:</h3>
+        <p>For each geographical area:</p>
+        <ol class="process-steps">
+            <li>Creates initial random population from microdata</li>
+            <li>Uses simulated annealing to optimize population to match constraints</li>
+            <li>Tracks fitness and automatically adjusts optimization parameters</li>
+        </ol>
+        
+        <h3>Outputs:</h3>
+        <ul>
+            <li>Population IDs mapping area to individuals</li>
+            <li>Fractional comparisons showing constraint matching</li>
+        </ul>
+    </div>
 
     <footer>
         <p>© 2023 GoSynthPop - UK Spatial Synthetic Population Generator</p>
         <p>Research/Experimental Project - Not Ready for Production Use</p>
     </footer>
-
 </body>
 </html>
+
+
