@@ -1,0 +1,219 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Spatial Population Synthesis Documentation</title>
+    <style>
+        body {
+            font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+            line-height: 1.6;
+            color: #333;
+            max-width: 1000px;
+            margin: 0 auto;
+            padding: 20px;
+            background-color: #f8f9fa;
+        }
+        
+        h1, h2, h3, h4 {
+            color: #2c3e50;
+            margin-top: 1.5em;
+            border-bottom: 1px solid #eaecef;
+            padding-bottom: 0.3em;
+        }
+        
+        h1 {
+            text-align: center;
+            color: #1a5276;
+            border-bottom: 2px solid #3498db;
+            padding-bottom: 0.5em;
+        }
+        
+        code {
+            background-color: #f1f8ff;
+            padding: 0.2em 0.4em;
+            border-radius: 3px;
+            font-family: 'SFMono-Regular', Consolas, 'Liberation Mono', Menlo, monospace;
+            font-size: 0.9em;
+        }
+        
+        pre {
+            background-color: #f6f8fa;
+            padding: 1em;
+            border-radius: 5px;
+            overflow-x: auto;
+            border-left: 4px solid #3498db;
+            margin: 1.5em 0;
+        }
+        
+        .highlight {
+            background-color: #ffffcc;
+            padding: 2px 4px;
+        }
+        
+        .note {
+            background-color: #e7f3fe;
+            border-left: 4px solid #2196F3;
+            padding: 1em;
+            margin: 1em 0;
+        }
+        
+        .key-term {
+            font-weight: bold;
+            color: #2980b9;
+        }
+        
+        .algorithm-step {
+            margin-left: 1.5em;
+            margin-bottom: 0.5em;
+        }
+        
+        .constraint {
+            color: #c7254e;
+        }
+    </style>
+</head>
+<body>
+    <h1>Technical Documentation: Spatial Population Synthesis via Simulated Annealing</h1>
+    
+    <h2>1. Overview and Conceptual Foundation</h2>
+    
+    <p>This code implements a core component of a <span class="key-term">spatial microsimulation</span> or <span class="key-term">population synthesis</span> tool. Its primary purpose is to generate a realistic, synthetic population for a given geographical area (e.g., a UK Local Authority) that adheres to known statistical aggregates (e.g., census tables) while being built from individual-level records (microdata) from a sample survey.</p>
+    
+    <h3>The Core Problem</h3>
+    <p>Census data provides aggregated counts (e.g., "100 people aged 25-34, 50 households with 2 cars") but lacks individual records due to privacy. Survey data (e.g., the Understanding Society survey) provides rich individual-level data but is only a sample and is not geographically representative. This tool bridges that gap by creating a full list of synthetic individuals that, when aggregated, match the census constraints for a specific area.</p>
+    
+    <h3>The Chosen Method: Simulated Annealing</h3>
+    <p>The algorithm is based on <span class="key-term">Simulated Annealing (SA)</span>, a probabilistic optimization technique inspired by the process of annealing in metallurgy. SA is well-suited for this problem because it can efficiently navigate large, complex solution spaces (the vast number of possible population combinations) to find a near-optimal solution without getting trapped in poor local minima.</p>
+    
+    <p>The algorithm starts with a random initial population, then iteratively makes small changes (swapping one individual for another), accepting changes that improve the solution but also occasionally accepting worse changes based on a "temperature" parameter. This controlled randomness allows the algorithm to explore the solution space broadly before gradually "cooling down" and converging on a final solution.</p>
+    
+    <hr>
+    
+    <h2>2. Detailed Code Explanation</h2>
+    
+    <p>The code is written in Go, a statically typed, compiled language known for its efficiency and built-in support for concurrency, making it ideal for processing large datasets in parallel.</p>
+    
+    <h3>2.1. Constants and Configuration (Lines 1-15)</h3>
+    
+    <pre><code>const (
+    EPSILON = 1e-10
+    KL_DIVERGENCE  = iota
+    CHI_SQUARED
+    EUCLIDEAN
+    NORM_EUCLIDEAN
+    MANHATTEN
+)</code></pre>
+    
+    <ul>
+        <li><code>EPSILON</code>: A very small constant (<code>0.0000000001</code>) used for <span class="key-term">numerical stability</span>. It prevents division by zero and the logarithm of zero in distance calculations.</li>
+        <li><span class="key-term">Distance Metric Constants</span>: These are integer identifiers for the various statistical methods available to measure the difference between the target census constraints and the current synthetic population aggregates.</li>
+    </ul>
+    
+    <h3>2.2. Distance Metric Functions</h3>
+    
+    <p>A <span class="key-term">function type</span> is defined, specifying the signature for all distance functions.</p>
+    <pre><code>type DistanceFunc func([]float64, []float64) float64</code></pre>
+    
+    <p>This means any function that takes two slices of <code>float64</code> and returns a single <code>float64</code> can be treated as a <code>DistanceFunc</code>.</p>
+    
+    <h4>Factory Function: <code>distanceFunc</code> (Lines 18-40)</h4>
+    
+    <p>This function acts as a dispatcher. Based on the string value provided in the configuration (<code>config.Distance</code>), it returns the appropriate function for calculating the distance (error) between two distributions.</p>
+    
+    <pre><code>func distanceFunc(config AnnealingConfig) DistanceFunc {
+    switch config.Distance {
+    case "CHI_SQUARED":
+        return ChiSquaredDistance
+    case "EUCLIDEAN":
+        return EuclideanDistance
+    // ... other cases ...
+    default:
+        return KLDivergence
+    }
+}</code></pre>
+    
+    <h4>Specific Distance Functions:</h4>
+    
+    <ul>
+        <li><code>KLDivergence</code> (Kullback-Leibler Divergence): Measures how one probability distribution diverges from a second, expected distribution.</li>
+        <li><code>ChiSquaredDistance</code>: A standard statistical measure of the discrepancy between observed and expected values.</li>
+        <li><code>EuclideanDistance</code>: The straight-line "ordinary" distance between two points in multi-dimensional space.</li>
+        <li><code>NormalizedEuclideanDistance</code>: A crucial enhancement for this domain. It normalizes the difference in each category by the expected value.</li>
+        <li><code>ManhattanDistance</code> (L1 Norm): The sum of the absolute differences along each dimension.</li>
+        <li><code>JSdivergence</code> (Jensen-Shannon Divergence): A symmetric and smoothed version of the KL divergence.</li>
+        <li><code>Cosine</code>: Measures the cosine of the angle between two vectors.</li>
+    </ul>
+    
+    <h3>2.3. Core Algorithm Functions</h3>
+    
+    <h4><code>initPopulation</code> (Lines 189-218)</h4>
+    
+    <p>This function creates the initial, random synthetic population for an area.</p>
+    
+    <div class="algorithm-step">1. It first pre-filters the entire <code>microdata</code> pool to find all valid individual records.</div>
+    <div class="algorithm-step">2. It then randomly samples from these valid records until the synthetic population reaches the required total number of individuals.</div>
+    <div class="algorithm-step">3. It simultaneously builds two key data structures:
+        <ul>
+            <li><code>synthPopTotals []float64</code>: A running aggregate total for every census category</li>
+            <li><code>synthPopMicrodataIndexs []int</code>: A list of indices pointing back to the original <code>microdata</code> slice</li>
+        </ul>
+    </div>
+    
+    <h4><code>replace</code> (Lines 122-172) - The Heart of Simulated Annealing</h4>
+    
+    <p>This function performs a single iteration of the algorithm: a proposed change and a decision to accept or reject it.</p>
+    
+    <div class="algorithm-step">1. <strong>Propose a Change</strong>: Randomly selects a new candidate individual and a random individual to be replaced.</div>
+    <div class="algorithm-step">2. <strong>Calculate New Fitness</strong>: Temporarily updates the aggregates and calculates new fitness.</div>
+    <div class="algorithm-step">3. <strong>Metropolis Criterion</strong>: Decides whether to accept the new solution.
+        <ul>
+            <li>Always accept if the new fitness is better</li>
+            <li>Probabilistically accept a worse solution based on temperature</li>
+        </ul>
+    </div>
+    <div class="algorithm-step">4. <strong>Commit or Revert</strong>: Updates the population if accepted, reverts if rejected.</div>
+    
+    <h4><code>syntheticPopulation</code> (Lines 221-292) - The Main Optimization Loop</h4>
+    
+    <p>This function orchestrates the entire simulated annealing process for one geographic area.</p>
+    
+    <div class="algorithm-step">1. <strong>Initialization</strong>: Calls <code>initPopulation</code> and sets initial fitness.</div>
+    <div class="algorithm-step">2. <strong>Annealing Parameters Setup</strong>: Configures temperature, cooling rate, and improvement tracking.</div>
+    <div class="algorithm-step">3. <strong>Main Loop</strong>: Continues for maximum iterations or until system cools.
+        <ul>
+            <li>Calls <code>replace</code> to attempt changes</li>
+            <li>Tracks the best solution ever found</li>
+            <li>Implements stagnation detection and reheating</li>
+            <li>Cools the temperature gradually</li>
+        </ul>
+    </div>
+    <div class="algorithm-step">4. <strong>Result Preparation</strong>: Packages the best-found solution into a results struct.</div>
+    
+    <hr>
+    
+    <h2>3. Key Go Language Features Utilized</h2>
+    
+    <ul>
+        <li><strong>Slices</strong> (<code>[]float64</code>, <code>[]int</code>): Dynamic, flexible arrays for handling sequences of data</li>
+        <li><strong>Functions as First-Class Citizens</strong>: The <code>DistanceFunc</code> type allows for clean, decoupled code</li>
+        <li><strong>Pass-by-Reference for Slices</strong>: Efficient modification of large datasets</li>
+        <li><strong><code>rand.Rand</code> as a Parameter</strong>: Makes code deterministic and testable</li>
+    </ul>
+    
+    <hr>
+    
+    <h2>4. Application Context: UK Local Authorities</h2>
+    
+    <p>This code is designed to run for <strong>many areas independently</strong>. A typical use case would involve:</p>
+    
+    <div class="algorithm-step">1. Loading a national microdataset and constraint data for all ~400 UK Local Authorities.</div>
+    <div class="algorithm-step">2. Using Go's powerful concurrency features to run the algorithm for dozens of areas in parallel.</div>
+    <div class="algorithm-step">3. Collecting all the results and writing them to a database or file.</div>
+    
+    <div class="note">
+        <p>The output is a spatially detailed synthetic population where each individual is a realistic entity with a full set of attributes, and the collective attributes of all individuals in any given area accurately match the published census statistics for that area.</p>
+    </div>
+    
+</body>
+</html>
