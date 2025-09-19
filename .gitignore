@@ -29,7 +29,6 @@ env/
 # Data files (CSV, JSON, etc.)
 /data/
 *.csv
-*.json
 *.xlsx
 *.feather
 *.parquet

@@ -1,0 +1,14 @@
+{
+  "constraints": {
+    "file": "data/census2022_all_go.csv"
+  },
+  "microdata": {
+    "file": "data/us_hh_export_go.csv"
+  },
+  "output": {
+    "file": "results/synthetic_population_0608.csv"
+  },
+  "validate": {
+    "file": "results/synthPopSurvay0608.csv"
+  }
+}

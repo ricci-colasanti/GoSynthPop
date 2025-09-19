@@ -1,0 +1,14 @@
+{
+  "constraints": {
+    "file": "data/constraint_targets_counts_07_22.csv"
+  },
+  "microdata": {
+    "file": "data/microdata_encoded_counts_07_22.csv"
+  },
+  "output": {
+    "file": "results/synthetic_population_0722.csv"
+  },
+  "scatter": {
+    "file": "results/scatter.csv"
+  }
+}

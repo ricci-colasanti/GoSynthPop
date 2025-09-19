@@ -1,0 +1,14 @@
+{
+    "initialTemp": 5000.0,
+    "minTemp": 0.00001,
+    "coolingRate": 0.999,
+    "reheatFactor": 0.8,
+    "fitnessThreshold": 0.001,
+    "minImprovement": 0.0001,
+    "maxIterations": 5000000,
+    "windowSize": 1000,
+    "change": 100000,
+    "distance": "COSINE",
+    "useRandomSeed": "yes",
+    "randomSeed": 42
+}
