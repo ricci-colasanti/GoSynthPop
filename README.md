@@ -48,3 +48,7 @@ This tool creates spatially detailed synthetic populations that match statistica
 3. Build the application:
    ```bash
    go build
+
+
+
+ V0.22  
