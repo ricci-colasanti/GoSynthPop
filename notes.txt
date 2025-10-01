@@ -1,0 +1,43 @@
+Why the git clone git@github-ricci-colasanti:ricci-colasanti/GoSynthPop.git … command works
+
+    Your ~/.ssh/config tells SSH which key to use for each host alias
+
+    Host github-ricci-colasanti
+        HostName github.com
+        User git
+        IdentityFile ~/.ssh/ricci-colasanti
+        IdentitiesOnly yes
+
+        Host github-ricci-colasanti is just a nickname you invented.
+        When SSH sees a connection request for git@github-ricci-colasanti, it looks up that block, replaces the hostname with github.com, and forces the use of the private key ~/.ssh/ricci-colasanti.
+        IdentitiesOnly yes guarantees SSH will not offer any other keys that might be loaded in the agent.
+
+    Git passes the string before the colon (:) as the SSH “host”
+
+    In a Git SSH URL the part before the colon is the hostname (or alias) and the part after the colon is the repository path.
+
+    git@github-ricci-colasanti:ricci-colasanti/GoSynthPop.git
+    ^^^^^^^^^^^^^^^^^^^^   ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+    SSH user & host alias   repository location on GitHub
+
+    Because the host part is github-ricci-colasanti, SSH consults the config entry above and authenticates with the ricci-colasanti key.
+
+    That key is attached to the ricci‑colasanti GitHub account
+
+    You previously added the public counterpart (ricci-colasanti.pub) to the ricci‑colasanti account under Settings → SSH and GPG keys.
+    Therefore, when GitHub receives the SSH handshake, it recognises the key, maps it to the correct user, and authorises the operation.
+
+    Contrast with the failing command
+
+    git clone git@github.com:ricci-colasanti/GoSynthPop.git
+
+        The host part here is the literal github.com.
+        Your ~/.ssh/config has no special entry for plain github.com (except the default you may have left). By default SSH falls back to the first matching entry, which in your file is the one that uses ~/.ssh/id_ed25519.
+        That key belongs to the DrRic account, which does not have write permission on the ricci-colasanti/GoSynthPop repository, so the push is rejected.
+
+Bottom line
+
+    Alias → config entry → specific key → correct GitHub account → authentication succeeds.
+    Plain github.com → default key → wrong account → authentication fails.
+
+Whenever you need to work with a repository that belongs to a particular GitHub identity, use the corresponding alias in the URL (or change the remote URL to that alias). That guarantees SSH will present the right key every time, avoiding the “permission denied to DrRic” error you saw earlier.
