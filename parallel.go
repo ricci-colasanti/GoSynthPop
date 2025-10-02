@@ -47,13 +47,14 @@ func initializeRNG(config AnnealingConfig, numWorkers int) []*rand.Rand {
 //
 // Returns:
 //   - error: Any error encountered during processing
-func parallelRun(constraints []ConstraintData, microData []MicroData, microdataHeader []string, outputfile1 string, outputfile2 string, config AnnealingConfig) error {
+func parallelRun(constraints []ConstraintData, microData []MicroData, microdataHeader []string, outputfile1 string, outputfile2 string, config AnnealingConfig, updates chan<- UIUpdate) error {
 	// Dynamic worker count - use either CPU count or constraint count, whichever is smaller
 	numWorkers := runtime.NumCPU()
 	if len(constraints) < numWorkers {
 		numWorkers = len(constraints)
 	}
-	fmt.Printf("🚀 Starting %d workers for %d population areas\n", numWorkers, len(constraints))
+	updates <- UIUpdate{Text: fmt.Sprintf("🚀 Starting %d workers for %d population areas", numWorkers, len(constraints))}
+	// fmt.Printf("🚀 Starting %d workers for %d population areas\n", numWorkers, len(constraints))
 
 	// Initialize RNGs based on config
 	workerRNGs := initializeRNG(config, numWorkers)
@@ -127,9 +128,9 @@ func parallelRun(constraints []ConstraintData, microData []MicroData, microdataH
 			// Include memory usage in progress report
 			var m runtime.MemStats
 			runtime.ReadMemStats(&m)
-
-			fmt.Printf("\r📊 Progress: %d/%d (%.1f%%) | ⏱️ Elapsed: %v | 🕒 ETA: %v | 🧠 Memory: %vMB",
-				done, totalJobs, percent, elapsed, eta.Round(time.Second), m.Alloc/1024/1024)
+			updates <- UIUpdate{Text: fmt.Sprintf("\r📊 Progress: %d/%d (%.1f%%) | ⏱️ Elapsed: %v | 🕒 ETA: %v | 🧠 Memory: %vMB", done, totalJobs, percent, elapsed, eta.Round(time.Second), m.Alloc/1024/1024)}
+			// fmt.Printf("\r📊 Progress: %d/%d (%.1f%%) | ⏱️ Elapsed: %v | 🕒 ETA: %v | 🧠 Memory: %vMB",
+			// 	done, totalJobs, percent, elapsed, eta.Round(time.Second), m.Alloc/1024/1024)
 		}
 	}()
 

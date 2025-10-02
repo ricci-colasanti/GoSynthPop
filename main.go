@@ -6,6 +6,11 @@ import (
 	"os"
 	"reflect"
 	"time"
+
+	"fyne.io/fyne/v2"
+	"fyne.io/fyne/v2/app"
+	"fyne.io/fyne/v2/container"
+	"fyne.io/fyne/v2/widget"
 )
 
 type MicroData struct {
@@ -41,6 +46,11 @@ type AnnealingConfig struct {
 	Distance         string  `json:"distance"`
 	UseRandomSeed    string  `json:"useRandomSeed"`
 	RandomSeed       *int64  `json:"randomSeed,omitempty"` // Optional seed for reproducibility
+}
+
+// UIUpdate struct for messages
+type UIUpdate struct {
+	Text string
 }
 
 var ValidMetrics = []string{"CHI_SQUARED", "EUCLIDEAN", "NORM_EUCLIDEAN", "MANHATTEN", "KL_DIVERGENCE", "COSINE", "JSDIVERGENCE"}
@@ -145,6 +155,7 @@ func loadMicrodata(microdataFile string) ([]MicroData, []string, error) {
 }
 
 func main() {
+
 	configFileName, anellingFileName := readArgs()
 
 	config, err := loadConfig(configFileName)
@@ -168,14 +179,50 @@ func main() {
 		fmt.Printf("Microdata loading error: %v", err)
 	}
 
-	if reflect.DeepEqual(constraintHeader, microDataHeader) {
-		start := time.Now()
-		parallelRun(constraints, microData, microDataHeader, config.Output.File, config.Validate.File, annealingConfig)
+	myApp := app.New()
+	myWindow := myApp.NewWindow("UK-808")
+	myWindow.Resize(fyne.NewSize(600, 100))
 
-		elapsed := time.Since(start) // Calculate duration
-		fmt.Printf("slowFunction took %s\n", elapsed)
-	} else {
-		fmt.Printf("Error: The Constraints header and the MiroData header not the same\n")
-		os.Exit(1)
-	}
+	// Create our UI
+	statusLabel := widget.NewLabel("Ready to start...")
+
+	// Create channel for UI updates
+	uiUpdates := make(chan UIUpdate, 10)
+
+	// Start the UI update handler (runs forever)
+	go func() {
+		for update := range uiUpdates {
+			// Use fyne.Do for thread-safe UI updates
+			fyne.Do(func() {
+				statusLabel.SetText(update.Text)
+			})
+		}
+	}()
+	// Button that starts the worker in a goroutine
+	var startButton *widget.Button
+	startButton = widget.NewButton("Start", func() {
+		if reflect.DeepEqual(constraintHeader, microDataHeader) {
+			startButton.Disable()
+			start := time.Now()
+			// Run parallelRun in a goroutine to avoid blocking UI
+			go func() {
+				parallelRun(constraints, microData, microDataHeader, config.Output.File, config.Validate.File, annealingConfig, uiUpdates)
+
+				elapsed := time.Since(start)
+				// Send completion message
+				uiUpdates <- UIUpdate{Text: fmt.Sprintf("✅ Completed in %s", elapsed)}
+				// SAFE: fyne.Do() ensures it runs on main UI thread
+				fyne.Do(func() {
+					startButton.Enable()
+				})
+			}()
+		} else {
+			fmt.Printf("Error: The Constraints header and the MicroData header not the same\n")
+			os.Exit(1)
+		}
+	})
+	content := container.NewVBox(statusLabel, startButton)
+	myWindow.SetContent(content)
+	myWindow.ShowAndRun()
+	close(uiUpdates)
 }
