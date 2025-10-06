@@ -11,6 +11,8 @@ import (
 	"fyne.io/fyne/v2"
 	"fyne.io/fyne/v2/app"
 	"fyne.io/fyne/v2/container"
+	"fyne.io/fyne/v2/dialog"
+	"fyne.io/fyne/v2/storage"
 	"fyne.io/fyne/v2/widget"
 )
 
@@ -173,18 +175,18 @@ type RootConfig struct {
 }
 
 // Function to load both configs from single file
-func LoadCombinedConfigs(filename string) (AnnealingConfig, PopulationConfig, error) {
+func LoadCombinedConfigs(filename string) (RootConfig, error) {
 	data, err := os.ReadFile(filename)
 	var root RootConfig
 	if err != nil {
-		return root.AnnealingConfig, root.PopulationConfig, fmt.Errorf("failed to read config file: %w", err)
+		return root, fmt.Errorf("failed to read config file: %w", err)
 	}
 
 	if err := json.Unmarshal(data, &root); err != nil {
-		return root.AnnealingConfig, root.PopulationConfig, fmt.Errorf("failed to parse JSON: %w", err)
+		return root, fmt.Errorf("failed to parse JSON: %w", err)
 	}
 
-	return root.AnnealingConfig, root.PopulationConfig, nil
+	return root, nil
 }
 
 func readArgs() (string, bool) {
@@ -227,21 +229,7 @@ func loadMicrodata(microdataFile string) ([]MicroData, []string, error) {
 	return microData, header, nil
 }
 
-func main() {
-	configFile, cliMode := readArgs()
-
-	annealingConfig, config, err := LoadCombinedConfigs(configFile)
-	if err != nil {
-		fmt.Printf("Config error: %v\n", err)
-		os.Exit(1)
-	}
-
-	if cliMode {
-		fmt.Printf("Using config file: %s\n", configFile)
-		fmt.Printf("Constraints file: %s\n", config.Constraints.File)
-		fmt.Printf("Microdata file: %s\n", config.Microdata.File)
-		fmt.Printf("Output file: %s\n", config.Output.File)
-	}
+func loadInputData(config RootConfig) ([]ConstraintData, []string, []MicroData, []string) {
 	// Load data
 	constraints, constraintHeader, err := loadConstraints(config.Constraints.File)
 	if err != nil {
@@ -254,6 +242,168 @@ func main() {
 		fmt.Printf("Microdata loading error: %v\n", err)
 		os.Exit(1)
 	}
+	return constraints, constraintHeader, microData, microDataHeader
+}
+
+func fileExists(filename string) bool {
+	_, err := os.Stat(filename)
+	return !os.IsNotExist(err)
+}
+
+func guiMain(configFile string) {
+	myApp := app.New()
+	myWindow := myApp.NewWindow("UK-808")
+	myWindow.Resize(fyne.NewSize(800, 600))
+
+	// Create UI components
+	statusLabel, filesLabel := createStatusLabels(configFile)
+	uiUpdates := make(chan UIUpdate, 10)
+
+	// Start UI update handler
+	go handleUIUpdates(uiUpdates, statusLabel)
+
+	// Create menu
+	mainMenu := createMainMenu(myWindow, &configFile, filesLabel, statusLabel)
+	myWindow.SetMainMenu(mainMenu)
+
+	// Create content
+	startButton := createStartButton(configFile, uiUpdates)
+	content := createLayout(statusLabel, filesLabel, startButton)
+
+	myWindow.SetContent(content)
+	myWindow.ShowAndRun()
+	close(uiUpdates)
+}
+
+func createStatusLabels(configFile string) (*widget.Label, *widget.Label) {
+	statusLabel := widget.NewLabel("")
+	filesLabel := widget.NewLabel("")
+
+	if fileExists(configFile) {
+		statusLabel.SetText("Ready to start...")
+		filesLabel.SetText(fmt.Sprintf("Using config file: %s\n", configFile))
+	} else {
+		statusLabel.SetText("Please select config file from file menu")
+	}
+
+	return statusLabel, filesLabel
+}
+
+func handleUIUpdates(uiUpdates chan UIUpdate, statusLabel *widget.Label) {
+	for update := range uiUpdates {
+		fyne.Do(func() {
+			statusLabel.SetText(update.Text)
+		})
+	}
+}
+
+func createMainMenu(myWindow fyne.Window, configFile *string, filesLabel *widget.Label, statusLabel *widget.Label) *fyne.MainMenu {
+	openItem := createOpenMenuItem(myWindow, configFile, filesLabel, statusLabel)
+	fileMenu := fyne.NewMenu("File", openItem)
+	return fyne.NewMainMenu(fileMenu)
+}
+
+func createOpenMenuItem(myWindow fyne.Window, configFile *string, filesLabel *widget.Label, statusLabel *widget.Label) *fyne.MenuItem {
+	return fyne.NewMenuItem("Open", func() {
+		dialog := dialog.NewFileOpen(func(reader fyne.URIReadCloser, err error) {
+			if err != nil || reader == nil {
+				return // User cancelled or error
+			}
+
+			// Update configFile directly
+			*configFile = reader.URI().Path()
+			reader.Close()
+
+			// Update UI
+			filesLabel.SetText(fmt.Sprintf("Using config file: %s", *configFile))
+			statusLabel.SetText("Config file loaded - ready to start")
+		}, myWindow)
+
+		// Set filter for JSON files only
+		dialog.SetFilter(storage.NewExtensionFileFilter([]string{".json"}))
+
+		// Set starting directory to current working directory
+		currentDir, err := os.Getwd()
+		if err == nil {
+			dirURI := storage.NewFileURI(currentDir)
+			listableURI, err := storage.ListerForURI(dirURI)
+			if err == nil {
+				dialog.SetLocation(listableURI)
+			}
+		}
+
+		dialog.Show()
+	})
+}
+
+func createStartButton(configFile string, uiUpdates chan UIUpdate) *widget.Button {
+	startButton := widget.NewButton("Start", nil)
+	// Add function later
+	startButton.OnTapped = func() {
+		startButton.Disable()
+		start := time.Now()
+
+		config, err := LoadCombinedConfigs(configFile)
+		if err != nil {
+			fmt.Printf("Config error: %v\n", err)
+			os.Exit(1)
+		}
+
+		constraints, constraintHeader, microData, microDataHeader := loadInputData(config)
+
+		// Check if headers match
+		if !reflect.DeepEqual(constraintHeader, microDataHeader) {
+			fmt.Printf("Error: The Constraints header and the MicroData header are not the same\n")
+			os.Exit(1)
+		}
+
+		// Run parallelRun in a goroutine to avoid blocking UI
+		go func() {
+			parallelRun(constraints, microData, microDataHeader, config.Output.File, config.Validate.File, config.AnnealingConfig, uiUpdates)
+
+			elapsed := time.Since(start)
+			uiUpdates <- UIUpdate{Text: fmt.Sprintf("✅ Completed in %s", elapsed)}
+			fyne.Do(func() {
+				startButton.Enable()
+			})
+		}()
+	}
+
+	startButton.Importance = widget.HighImportance
+	return startButton
+}
+
+func createLayout(statusLabel *widget.Label, filesLabel *widget.Label, startButton *widget.Button) fyne.CanvasObject {
+	statusContent := container.NewBorder(
+		nil,         // top
+		nil,         // bottom
+		nil,         // left
+		startButton, // right
+		filesLabel,  // center
+	)
+
+	content := container.NewBorder(
+		statusLabel,   // top
+		statusContent, // bottom
+		nil,           // left
+		nil,           // right
+		nil,           // center
+	)
+
+	return content
+}
+
+func cliMain(configFile string) {
+	config, err := LoadCombinedConfigs(configFile)
+	if err != nil {
+		fmt.Printf("Config error: %v\n", err)
+		os.Exit(1)
+	}
+	constraints, constraintHeader, microData, microDataHeader := loadInputData(config)
+	fmt.Printf("Using config file: %s\n", configFile)
+	fmt.Printf("Constraints file: %s\n", config.Constraints.File)
+	fmt.Printf("Microdata file: %s\n", config.Microdata.File)
+	fmt.Printf("Output file: %s\n", config.Output.File)
 
 	// Check if headers match
 	if !reflect.DeepEqual(constraintHeader, microDataHeader) {
@@ -262,73 +412,33 @@ func main() {
 	}
 
 	// CLI mode (-c flag)
-	if cliMode {
-		fmt.Println("🚀 Running in command-line mode...")
-		start := time.Now()
 
-		// Create a channel for updates
-		uiUpdates := make(chan UIUpdate, 10)
+	fmt.Println("🚀 Running in command-line mode...")
+	start := time.Now()
 
-		// Start a goroutine to print CLI updates
-		go func() {
-			for update := range uiUpdates {
-				fmt.Print("📢", update.Text)
-			}
-		}()
-
-		// Run the main process
-		parallelRun(constraints, microData, microDataHeader, config.Output.File, config.Validate.File, annealingConfig, uiUpdates)
-
-		elapsed := time.Since(start)
-		fmt.Printf("✅ Completed in %s\n", elapsed)
-		close(uiUpdates)
-		return
-	}
-
-	// GUI mode (default)
-	fmt.Println("🎨 Launching GUI mode...")
-	myApp := app.New()
-	myWindow := myApp.NewWindow("UK-808")
-	myWindow.Resize(fyne.NewSize(600, 100))
-
-	// Create our UI
-	statusLabel := widget.NewLabel("Ready to start...")
-	filesLabel := widget.NewLabel(fmt.Sprintf("Using config file: %s\n", configFile))
-	// Create channel for UI updates
+	// Create a channel for updates
 	uiUpdates := make(chan UIUpdate, 10)
 
-	// Start the UI update handler
+	// Start a goroutine to print CLI updates
 	go func() {
 		for update := range uiUpdates {
-			fyne.Do(func() {
-				statusLabel.SetText(update.Text)
-			})
+			fmt.Print("📢", update.Text)
 		}
-
 	}()
 
-	// Button that starts the worker in a goroutine
-	var startButton *widget.Button
-	startButton = widget.NewButton("Start", func() {
-		startButton.Disable()
-		start := time.Now()
+	// Run the main process
+	parallelRun(constraints, microData, microDataHeader, config.Output.File, config.Validate.File, config.AnnealingConfig, uiUpdates)
 
-		// Run parallelRun in a goroutine to avoid blocking UI
-		go func() {
-			parallelRun(constraints, microData, microDataHeader, config.Output.File, config.Validate.File, annealingConfig, uiUpdates)
-
-			elapsed := time.Since(start)
-			// Send completion message
-			uiUpdates <- UIUpdate{Text: fmt.Sprintf("✅ Completed in %s", elapsed)}
-
-			fyne.Do(func() {
-				startButton.Enable()
-			})
-		}()
-	})
-
-	content := container.NewVBox(statusLabel, filesLabel, startButton)
-	myWindow.SetContent(content)
-	myWindow.ShowAndRun()
+	elapsed := time.Since(start)
+	fmt.Printf("✅ Completed in %s\n", elapsed)
 	close(uiUpdates)
+}
+
+func main() {
+	configFile, cliMode := readArgs()
+	if cliMode {
+		cliMain(configFile)
+	} else {
+		guiMain(configFile)
+	}
 }
