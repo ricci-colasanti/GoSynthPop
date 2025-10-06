@@ -54,7 +54,6 @@ func parallelRun(constraints []ConstraintData, microData []MicroData, microdataH
 		numWorkers = len(constraints)
 	}
 	updates <- UIUpdate{Text: fmt.Sprintf("🚀 Starting %d workers for %d population areas", numWorkers, len(constraints))}
-	// fmt.Printf("🚀 Starting %d workers for %d population areas\n", numWorkers, len(constraints))
 
 	// Initialize RNGs based on config
 	workerRNGs := initializeRNG(config, numWorkers)
@@ -129,8 +128,6 @@ func parallelRun(constraints []ConstraintData, microData []MicroData, microdataH
 			var m runtime.MemStats
 			runtime.ReadMemStats(&m)
 			updates <- UIUpdate{Text: fmt.Sprintf("\r📊 Progress: %d/%d (%.1f%%) | ⏱️ Elapsed: %v | 🕒 ETA: %v | 🧠 Memory: %vMB", done, totalJobs, percent, elapsed, eta.Round(time.Second), m.Alloc/1024/1024)}
-			// fmt.Printf("\r📊 Progress: %d/%d (%.1f%%) | ⏱️ Elapsed: %v | 🕒 ETA: %v | 🧠 Memory: %vMB",
-			// 	done, totalJobs, percent, elapsed, eta.Round(time.Second), m.Alloc/1024/1024)
 		}
 	}()
 
@@ -216,9 +213,9 @@ func parallelRun(constraints []ConstraintData, microData []MicroData, microdataH
 	writerWg.Wait()    // All results written
 
 	// Final performance report
-	elapsed := time.Since(startTime).Round(time.Second)
-	fmt.Printf("\n✅ Completed %d populations in %v (avg %.2f/sec)\n",
-		totalJobs, elapsed, float64(totalJobs)/elapsed.Seconds())
+	// elapsed := time.Since(startTime).Round(time.Second)
+	// fmt.Printf("\n✅ Completed %d populations in %v (avg %.2f/sec)\n",
+	// 	totalJobs, elapsed, float64(totalJobs)/elapsed.Seconds())
 
 	return nil
 }

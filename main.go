@@ -236,11 +236,12 @@ func main() {
 		os.Exit(1)
 	}
 
-	fmt.Printf("Using config file: %s\n", configFile)
-	fmt.Printf("Constraints file: %s\n", config.Constraints.File)
-	fmt.Printf("Microdata file: %s\n", config.Microdata.File)
-	fmt.Printf("Output file: %s\n", config.Output.File)
-
+	if cliMode {
+		fmt.Printf("Using config file: %s\n", configFile)
+		fmt.Printf("Constraints file: %s\n", config.Constraints.File)
+		fmt.Printf("Microdata file: %s\n", config.Microdata.File)
+		fmt.Printf("Output file: %s\n", config.Output.File)
+	}
 	// Load data
 	constraints, constraintHeader, err := loadConstraints(config.Constraints.File)
 	if err != nil {
@@ -271,7 +272,7 @@ func main() {
 		// Start a goroutine to print CLI updates
 		go func() {
 			for update := range uiUpdates {
-				fmt.Println("📢", update.Text)
+				fmt.Print("📢", update.Text)
 			}
 		}()
 
@@ -292,24 +293,18 @@ func main() {
 
 	// Create our UI
 	statusLabel := widget.NewLabel("Ready to start...")
-
+	filesLabel := widget.NewLabel(fmt.Sprintf("Using config file: %s\n", configFile))
 	// Create channel for UI updates
 	uiUpdates := make(chan UIUpdate, 10)
 
 	// Start the UI update handler
 	go func() {
 		for update := range uiUpdates {
-			if cliMode {
-				// Carriage return to beginning of line
-				fmt.Print("\r")
-				// Print with padding to clear previous content
-				fmt.Printf("%-80s", update.Text) // Adjust 80 to your terminal width
-			} else {
-				fyne.Do(func() {
-					statusLabel.SetText(update.Text)
-				})
-			}
+			fyne.Do(func() {
+				statusLabel.SetText(update.Text)
+			})
 		}
+
 	}()
 
 	// Button that starts the worker in a goroutine
@@ -332,7 +327,7 @@ func main() {
 		}()
 	})
 
-	content := container.NewVBox(statusLabel, startButton)
+	content := container.NewVBox(statusLabel, filesLabel, startButton)
 	myWindow.SetContent(content)
 	myWindow.ShowAndRun()
 	close(uiUpdates)
