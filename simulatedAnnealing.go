@@ -327,9 +327,9 @@ func syntheticPopulation(constraint ConstraintData, microdata []MicroData, confi
 
 	// Initialize population and fitness
 	synthPopTotals, synthPopIDs := initPopulation(constraint, microdata)
-	fitness := KLDivergence(constraint.Values, synthPopTotals)
-	distanceFunction := distanceFunc(config)
-
+	//fitness := KLDivergence(constraint.Values, synthPopTotals)
+	distfunc := distanceFunc(config)
+	fitness := distfunc(constraint.Values, synthPopTotals)
 	// Setup annealing parameters
 	changes := config.Change
 	temp := config.InitialTemp
@@ -348,7 +348,7 @@ func syntheticPopulation(constraint ConstraintData, microdata []MicroData, confi
 	// Main optimization loop
 	for iteration := 0; iteration < config.MaxIterations && changes > 0 && temp > config.MinTemp; iteration++ {
 		flag := true
-		fitness, flag = replace(microdata, constraint, synthPopTotals, synthPopIDs, fitness, temp, rng, distanceFunction)
+		fitness, flag = replace(microdata, constraint, synthPopTotals, synthPopIDs, fitness, temp, rng, distfunc)
 
 		// Update best solution
 		if fitness < bestFitness {
